@@ -759,13 +759,17 @@ eitherToMaybe :: Either b a -> Maybe a
 eitherToMaybe (Right x) = Just x
 eitherToMaybe _         = Nothing
 
-data GameOver = Checkmate | Stalemate
+data GameOver = Checkmate | Stalemate | FiftyMoveRule
   deriving (Show, Eq)
 
 checkGameOver :: State -> Maybe GameOver
 checkGameOver state
   = if hasNolegalMoves state.sideToMove state
     then Just (if isCheck then Checkmate else Stalemate)
+
+    else if state.halfMoveClock >= 100
+    then Just FiftyMoveRule
+
     else Nothing
   where
     isCheck = state.sideToMove `elem` playersInCheck state
@@ -833,11 +837,13 @@ gameLoop theme player1 player2 state = do
   case checkGameOver state' of
     Just Checkmate -> putStrLn "Checkmate!"
     Just Stalemate -> putStrLn "Stalemate. It's a draw."
+    Just FiftyMoveRule -> putStrLn "Fifty-move rule. It's a draw."
     Nothing -> do
       state'' <- player2 state'
       case checkGameOver state'' of
         Just Checkmate -> putStrLn "Checkmate!"
         Just Stalemate -> putStrLn "Stalemate. It's a draw."
+        Just FiftyMoveRule -> putStrLn "Fifty-move rule. It's a draw."
         Nothing -> gameLoop theme player1 player2 state''
 
 -- TODO: Terse notation for moves
