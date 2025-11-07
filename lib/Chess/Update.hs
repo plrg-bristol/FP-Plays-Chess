@@ -144,15 +144,10 @@ makeMove move state = do
 
   -- let opponentInCheck = nextPlayer state.sideToMove `elem` checkedPlayers
 
-  -- TODO: add current checks to state
-
 
   Right (state' { sideToMove = nextPlayer state.sideToMove
                 , fullMoveCounter = stepFullMoveCounter piece state.fullMoveCounter
-                -- TODO: update castlingAbility and enPassantTarget
                 })
--- makeMove cMove@(Castle _) = 
-makeMove _ state = Left "TODO: Implement promotion and castling"
 
 maybeToEither :: Maybe b -> a -> Either a b
 maybeToEither m e = maybe (Left e) Right m
