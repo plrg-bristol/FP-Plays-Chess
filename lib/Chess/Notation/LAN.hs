@@ -20,6 +20,9 @@ lanP = MkLAN <$> posP
              <*> posP
              <*> optional pieceP
 
+-- >>> parseMaybe lanP "e1g1"
+-- Just (MkLAN (MkPos E R1) (MkPos G R1) Nothing)
+
 -- Pretty printing --
 ---------------------
 

@@ -100,7 +100,7 @@ executable haskell-chess
     -- Other library packages from which modules are imported.
     build-depends:
         base,
-        haskell-chess
+        FP-Plays-Chess
 
     -- Directories containing source files.
     hs-source-dirs:   app
@@ -133,4 +133,4 @@ test-suite haskell-chess-test
     -- Test dependencies.
     build-depends:
         base,
-        haskell-chess
+        FP-Plays-Chess

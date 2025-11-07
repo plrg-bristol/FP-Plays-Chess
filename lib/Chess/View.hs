@@ -127,6 +127,7 @@ viewState theme state = unlines
   , "En passant: " ++ pretty (FEN.toEnPassantFEN $ enPassantTarget state)
   , "Half move clock: " ++ show (halfMoveClock state)
   , "Full move counter: " ++ show (fullMoveCounter state)
+  , "FEN: " ++ pretty (FEN.fromState state)
   , ""
   , show (sideToMove state) ++ " to play"
   ]

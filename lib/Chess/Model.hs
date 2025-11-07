@@ -123,6 +123,7 @@ toEnPassantTarget'' (MkPos file rank) = do
   epRank <- toEPRank rank
   Just (MkEPT file epRank)
 
+
 -- State
 ----------
 
@@ -135,3 +136,21 @@ data State = MkState
   , fullMoveCounter :: Int -- Number of full moves. Incremented after black's move
   }
   deriving (Show, Eq, Ord)
+
+modifyBoard :: (Board -> Board) -> State -> State
+modifyBoard f state = state{ board = f (board state)}
+
+modifySideToMove :: (Player -> Player) -> State -> State
+modifySideToMove f state = state{ sideToMove = f (sideToMove state)}
+
+modifyCastlingAbility :: (CastlingAbility -> CastlingAbility) -> State -> State
+modifyCastlingAbility f state = state{ castlingAbility = f (castlingAbility state)}
+
+modifyEnPassantTarget :: (Maybe EnPassantTarget -> Maybe EnPassantTarget) -> State -> State
+modifyEnPassantTarget f state = state{ enPassantTarget = f (enPassantTarget state)}
+
+modifyHalfMoveClock :: (Int -> Int) -> State -> State
+modifyHalfMoveClock f state = state{ halfMoveClock = f (halfMoveClock state)}
+
+modifyFullMoveCounter :: (Int -> Int) -> State -> State
+modifyFullMoveCounter f state = state{ fullMoveCounter = f (fullMoveCounter state)}
