@@ -74,23 +74,48 @@ calculateBestMove config fen = withStockfish $ \runCmd' calcMove' -> do
 
 withStockfish :: ((String -> IO [String]) -> (StopCondition -> IO LAN) -> IO a) -> IO a
 withStockfish stockfishCommands
-  = withCreateProcess (shell "stockfish"){std_in = CreatePipe, std_out = CreatePipe}
-  $ \mStdout mStdin _ _ph ->
-        case (mStdout, mStdin) of
-          (Just stdin, Just stdout) -> do
-            -- use UCI interface
-            sendCmd stdin "uci"
-            _ <- getLinesUntil stdout (== "uciok")
+  = withShellCmd "stockfish" (\stdin stdout -> do
+        -- use UCI interface
+        sendCmd stdin "uci"
+        _ <- getLinesUntil stdout (== "uciok")
 
-            -- Run desired commands
-            out <- stockfishCommands (runCmd stdin stdout) (calcMove stdin stdout) -- provide run function with the correct stdin and stdout handles to stockfish
+        -- Run desired commands
+        out <- stockfishCommands (runCmd stdin stdout) (calcMove stdin stdout) -- provide run function with the correct stdin and stdout handles to stockfish
 
-            -- Close stockfish
-            sendCmd stdin "quit"
+        -- Close stockfish
+        sendCmd stdin "quit"
 
-            -- return output from commands
-            pure out
-          _ -> ioError (userError "This error should never happen because we used `CreatePipe` for all handles")
+        -- return output from commands
+        pure out
+      )
+  -- = withCreateProcess (shell "stockfish"){std_in = CreatePipe, std_out = CreatePipe}
+  -- $ \mStdout mStdin _ _ph ->
+  --       case (mStdout, mStdin) of
+  --         (Just stdin, Just stdout) -> do
+  --           -- use UCI interface
+  --           sendCmd stdin "uci"
+  --           _ <- getLinesUntil stdout (== "uciok")
+
+  --           -- Run desired commands
+  --           out <- stockfishCommands (runCmd stdin stdout) (calcMove stdin stdout) -- provide run function with the correct stdin and stdout handles to stockfish
+
+  --           -- Close stockfish
+  --           sendCmd stdin "quit"
+
+  --           -- return output from commands
+  --           pure out
+  --         _ -> ioError (userError "This error should never happen because we used `CreatePipe` for all handles")
+
+withShellCmd :: String -> (Handle -> Handle -> IO a) -> IO a
+withShellCmd shellCommand handler
+  = withCreateProcess (shell shellCommand){std_in = CreatePipe, std_out = CreatePipe}
+      (\mStdout mStdin _ _ph ->
+          case (mStdout, mStdin) of
+            (Just stdin, Just stdout) -> do
+              handler stdin stdout
+            _ -> do
+              ioError (userError "This error should never happen because we used `CreatePipe` for all handles")
+      )
 
 -- Internal --
 --------------
