@@ -43,6 +43,7 @@ maintainer:         jess.foster@bristol.ac.uk
 -- A copyright notice.
 -- copyright:
 build-type:         Simple
+extra-doc-files:    README.md
 
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 -- extra-source-files:
@@ -104,6 +105,43 @@ executable haskell-chess
 
     -- Directories containing source files.
     hs-source-dirs:   app
+
+    -- Base language which the package is written in.
+    default-language: Haskell2010
+
+executable haskell-chess-server
+    -- Import common warning flags.
+    import:           warnings
+
+    -- Directories containing source files.
+    hs-source-dirs:   server
+
+    -- .hs or .lhs file containing the Main module.
+    main-is:          Main.hs
+
+    ghc-options: -threaded -with-rtsopts=-N
+
+    -- Modules included in this executable, other than Main.
+    -- other-modules:
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+
+    -- Other library packages from which modules are imported.
+    build-depends:
+        base,
+        FP-Plays-Chess,
+        blaze-html,
+        containers,
+        flow,
+        ihp-hsx,
+        microlens-platform,
+        scotty,
+        stm,
+        text,
+        time,
+        todo,
+        wai
 
     -- Base language which the package is written in.
     default-language: Haskell2010

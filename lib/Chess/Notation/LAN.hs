@@ -13,7 +13,7 @@ import Text.Yoda
 import Data.Maybe (catMaybes)
 
 data LAN = MkLAN Pos Pos (Maybe Piece)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Ord)
 
 lanP :: Parser LAN
 lanP = MkLAN <$> posP
