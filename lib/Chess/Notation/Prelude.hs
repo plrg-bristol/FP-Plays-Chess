@@ -49,6 +49,25 @@ pieceP = MkPiece White Pawn   <$ char 'P'
      <|> MkPiece Black Queen  <$ char 'q'
      <|> MkPiece Black King   <$ char 'k'
 
+pieceP' :: Parser Piece
+pieceP' = choice (map (\(player, contructor, c) -> MkPiece player contructor <$ char c)
+                      playerConstructorCharTuples)
+  where
+    playerConstructorCharTuples
+      = [ (White, Pawn  , 'P')
+        , (White, Knight, 'N')
+        , (White, Bishop, 'B')
+        , (White, Rook  , 'R')
+        , (White, Queen , 'Q')
+        , (White, King  , 'K')
+        , (Black, Pawn  , 'p')
+        , (Black, Knight, 'n')
+        , (Black, Bishop, 'b')
+        , (Black, Rook  , 'r')
+        , (Black, Queen , 'q')
+        , (Black, King  , 'k')
+        ]
+
 -- >>> parseMaybe pieceP "q"
 -- Just (MkPiece Black Queen)
 -- >>> parseMaybe pieceP "R"
