@@ -19,7 +19,7 @@ import Text.Yoda
 
 import qualified Chess.Engine.Stockfish as Stockfish
 
-import Data.Maybe ( catMaybes, fromJust, mapMaybe )
+import Data.Maybe ( catMaybes, fromJust, mapMaybe, isJust, fromMaybe )
 import qualified Data.Map.Strict as Map
 import Control.Monad (guard)
 import Control.Concurrent (threadDelay)
@@ -334,11 +334,8 @@ castlingMoves state = catMaybes [ castlingMove state castlingSide
 castlingMove :: State -> CastlingSide -> Maybe (Move, State -> State)
 castlingMove state castlingSide = do
   guard rightToCastle
-  guard (allSquaresClear [ MkPos file backRank
-                         | file <- case castlingSide of
-                             Kingside  -> [F, G]
-                             Queenside -> [B, C, D]
-                         ])
+  guard allSquaresClear
+  guard noCastlingThroughCheck
 
   -- These shouldn't be necessary if `castlingAbility` is tracked correctly
   king `onSquare` kingPos
@@ -363,6 +360,10 @@ castlingMove state castlingSide = do
         Kingside  -> state.castlingAbility.blackKingside
         Queenside -> state.castlingAbility.blackQueenside
 
+    files = case castlingSide of
+              Kingside  -> [F, G]
+              Queenside -> [B, C, D]
+
     backRank = case player of
       White -> R1
       Black -> R8
@@ -375,7 +376,11 @@ castlingMove state castlingSide = do
       Kingside  -> (MkPos H backRank, MkPos G backRank, MkPos F backRank)
       Queenside -> (MkPos A backRank, MkPos C backRank, MkPos D backRank)
 
-    allSquaresClear = all (`Map.notMember` state.board)
+    squaresToMoveThrough = [ MkPos file backRank | file <- files ]
+
+    allSquaresClear = all (`Map.notMember` state.board) squaresToMoveThrough
+
+    noCastlingThroughCheck = all (not . squareThreatenedBy (nextPlayer player) state.board) squaresToMoveThrough
 
     onSquare piece p = do
       piece' <- state.board Map.!? p
@@ -392,6 +397,73 @@ removePlayerCastlingRights player
                  , blackQueenside = False
                  }
 
+egCastleThroughCheck :: Board
+egCastleThroughCheck = board (fromJust $ FEN.stateFromFEN "rn2k2r/pppp1ppp/3b1n2/1b2p3/1B2PP2/3P1q2/PPP3PP/RNBQK2R w KQkq - 0 1")
+
+-- >>> squareThreatenedBy Black egCastleThroughCheck (MkPos G R8)
+-- True
+
+squareThreatenedBy :: Player -> Board -> Pos -> Bool
+squareThreatenedBy player b pos = or $ concat
+  [ -- Pawns
+    [ pieceAtOffsetPos b (MkPiece player Pawn) pos (fileOffset, rankOffset)
+    | fileOffset <- [-1,1]
+    , let rankOffset = case player of
+                         White -> -1
+                         Black ->  1
+    ]
+
+    -- Knights
+  , pieceAtOffsetPos b (MkPiece player Knight) pos <$> knightOffsets
+
+    -- King
+  , pieceAtOffsetPos b (MkPiece player King) pos <$> kingOffsets
+
+    -- Vert/Horizontal ray casts (Rooks + Queen)
+  , [ rayHitSatisfies (\piece -> piece == MkPiece player Rook || piece == MkPiece player Queen)
+                      b
+                      pos
+                      (dirToOffset dir)
+    | dir <- [North,East,South,West]
+    ]
+
+    -- Diagonal ray casts (Bishops + Queen)
+  , [ rayHitSatisfies (\piece -> piece == MkPiece player Bishop || piece == MkPiece player Queen)
+                      b
+                      pos
+                      (dirToOffset dir)
+    | dir <- [NE,SE,SW,NW]
+    ]
+  ]
+
+pieceAtPos :: Board -> Piece -> Pos -> Bool
+pieceAtPos b piece pos = fromMaybe False ((== piece) <$> b Map.!? pos)
+
+pieceAtOffsetPos :: Board -> Piece -> Pos -> (Int, Int) -> Bool
+pieceAtOffsetPos b piece pos offset
+  = fromMaybe False (pieceAtPos b piece <$> offsetPos pos offset)
+
+rayHitSatisfies :: (Piece -> Bool) -> Board -> Pos -> (Int, Int) -> Bool
+rayHitSatisfies p b initPos dir = fromMaybe False (go initPos)
+  where
+    go pos = do
+      pos' <- offsetPos pos dir
+      case b Map.!? pos' of
+        Nothing -> go pos'
+        Just piece -> Just (p piece)
+
+
+makeThreatBoard :: Player -> Board -> ThreatBoard
+makeThreatBoard player b = Map.fromAscList
+  [ (pos, threatSquare)
+  | pos <- [MkPos A R1 ..]
+  , let threatSquare
+          = case b Map.!? pos of
+              Just piece -> PieceSquare piece
+              Nothing
+                | squareThreatenedBy player b pos -> Threatened
+                | otherwise                       -> Unthreatened
+  ]
 
 egBoard :: Board
 egBoard = fromJust (FEN.parseBoard "rnbqkbnr/pp1pp2p/8/5pP1/3pP3/2P5/PP3PP1/RNBQKBNR")
@@ -631,7 +703,7 @@ psuedoLegalMovesAtPos state pos
           slidingMoves directions = concat [ slidingMovesInDirection state.board piece pos dir
                                            | dir <- directions
                                            ]
-                                           
+
 rookCastlingInvalidation :: (Move, State -> State) -> (Move, State -> State)
 rookCastlingInvalidation (move, f)
   = ( move

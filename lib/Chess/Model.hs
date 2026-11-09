@@ -1,6 +1,8 @@
+{-# LANGUAGE InstanceSigs #-}
 module Chess.Model where
 
 import Data.Map.Strict (Map) -- Requires `containers`
+import GHC.Enum (boundedEnumFrom, boundedEnumFromThen)
 
 -- Inspired by https://www.chessprogramming.org/Forsyth-Edwards_Notation#FEN_Syntax
 
@@ -39,6 +41,25 @@ data Rank = R1 | R2 | R3 | R4 | R5 | R6 | R7 | R8
 
 data Pos = MkPos File Rank
   deriving (Show, Eq, Ord)
+
+
+-- >>> quotRem 16 8
+-- (2,0)
+
+instance Enum Pos where
+  toEnum :: Int -> Pos
+  toEnum n = MkPos (toEnum fileInt) (toEnum rankInt)
+    where
+      (fileInt, rankInt) = quotRem n 8
+  fromEnum :: Pos -> Int
+  fromEnum (MkPos file rank) = fromEnum file * 8 + fromEnum rank
+  enumFrom     = boundedEnumFrom
+  enumFromThen = boundedEnumFromThen
+
+instance Bounded Pos where
+  minBound = MkPos A R1
+  maxBound = MkPos H R8
+
 
 {-
 Why not `data Pos = MkPos Int Int`?
@@ -154,3 +175,13 @@ modifyHalfMoveClock f state = state{ halfMoveClock = f (halfMoveClock state)}
 
 modifyFullMoveCounter :: (Int -> Int) -> State -> State
 modifyFullMoveCounter f state = state{ fullMoveCounter = f (fullMoveCounter state)}
+
+-- ThreatBoard
+----------------
+
+type ThreatBoard = Map Pos ThreatBoardSquare
+data ThreatBoardSquare
+  = Unthreatened
+  | Threatened
+  | PieceSquare Piece
+  deriving (Show, Eq, Ord)

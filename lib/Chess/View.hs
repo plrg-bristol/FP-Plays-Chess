@@ -117,6 +117,69 @@ printBoardFromFEN theme
 -- Or if using a light mode theme:
 -- > printBoardFromFEN LightTheme "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR"
 
+-- Displaying threatened spaces --
+----------------------------------
+
+viewThreatBoard :: Theme -> ThreatBoard -> String
+viewThreatBoard theme threatBoard
+  = boardPositionGrid
+    |> map (map (\pos -> viewThreatBoardSquare theme pos (threatBoard Map.! pos)))
+    |> zipWith (++) (map show [8 :: Int, 7 .. 1]) -- Add Rank to each row
+    |> (++ [' ' : ['a' .. 'h']])                  -- Add File to each column
+    |> map (intersperse ' ')                      -- Add spaces between grid
+    |> unlines
+
+
+viewThreatBoardSquare :: Theme -> Pos -> ThreatBoardSquare -> Char
+viewThreatBoardSquare theme pos threatBoardSquare
+  = case theme of
+      LightTheme -> case threatBoardSquare of
+        Unthreatened -> case positionColour pos of
+          DarkSquare  -> '•'
+          LightSquare -> '◦'
+        Threatened -> 'X'
+        PieceSquare (MkPiece player pieceType) -> case player of
+          White -> case pieceType of
+            Pawn   -> '♙'
+            Knight -> '♘'
+            Bishop -> '♗'
+            Rook   -> '♖'
+            Queen  -> '♕'
+            King   -> '♔'
+          Black -> case pieceType of
+            Pawn   -> '♟'
+            Knight -> '♞'
+            Bishop -> '♝'
+            Rook   -> '♜'
+            Queen  -> '♛'
+            King   -> '♚'
+
+      -- Annoyingly, dark themes in VSCode or the terminal invert the piece colours,
+      -- so white pieces look black and black pieces look white.
+      -- We can correct that by switching them around if the `Theme` is `Dark`.
+      DarkTheme -> case threatBoardSquare of
+        Unthreatened -> case positionColour pos of
+          DarkSquare  -> '◦'
+          LightSquare -> '•'
+        Threatened -> 'X'
+        PieceSquare (MkPiece player pieceType) -> case player of
+          White -> case pieceType of
+            Pawn   -> '♟'
+            Knight -> '♞'
+            Bishop -> '♝'
+            Rook   -> '♜'
+            Queen  -> '♛'
+            King   -> '♚'
+          Black -> case pieceType of
+            Pawn   -> '♙'
+            Knight -> '♘'
+            Bishop -> '♗'
+            Rook   -> '♖'
+            Queen  -> '♕'
+            King   -> '♔'
+
+-- E.g. with Chess.Update loaded, `putStrLn $ viewThreatBoard DarkTheme $ makeThreatBoard White (board (fromJust $ FEN.stateFromFEN "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 1"))`
+
 -- Displaying the full state --
 -------------------------------
 
