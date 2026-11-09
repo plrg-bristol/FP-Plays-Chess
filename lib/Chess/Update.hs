@@ -826,20 +826,25 @@ playFromFEN theme player1 player2 str = do
 gameLoop :: Theme -> (State -> IO State) -> (State -> IO State) -> State -> IO ()
 gameLoop theme player1 player2 state = do
   printState theme state
-  state' <- player1 state
-  printState theme state'
+  let player1Colour = state.sideToMove
+  state <- player1 state
+  printState theme state
 
-  case checkGameOver state' of
-    Just Checkmate -> putStrLn "Checkmate!"
+  case checkGameOver state of
+    Just Checkmate -> putStrLn ("Checkmate! " ++ show player1Colour ++ " wins.")
     Just Stalemate -> putStrLn "Stalemate. It's a draw."
     Just FiftyMoveRule -> putStrLn "Fifty-move rule. It's a draw."
     Nothing -> do
-      state'' <- player2 state'
-      case checkGameOver state'' of
-        Just Checkmate -> putStrLn "Checkmate!"
-        Just Stalemate -> putStrLn "Stalemate. It's a draw."
-        Just FiftyMoveRule -> putStrLn "Fifty-move rule. It's a draw."
-        Nothing -> gameLoop theme player1 player2 state''
+      let player2Colour = state.sideToMove
+      state <- player2 state
+      case checkGameOver state of
+        Just reason -> do
+          printState theme state
+          case reason of
+            Checkmate     -> putStrLn ("Checkmate! " ++ show player2Colour ++ " wins.")
+            Stalemate     -> putStrLn "Stalemate. It's a draw."
+            FiftyMoveRule -> putStrLn "Fifty-move rule. It's a draw."
+        Nothing -> gameLoop theme player1 player2 state
 
 -- TODO: Terse notation for moves
 
