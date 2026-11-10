@@ -143,7 +143,7 @@ flag c = True <$ char c
     --  <|> pure False -- Simple version which parses correct strings fine,
                        -- but fails to prevent incorrect strings like "BKQkq" or "KQBkq"
 
-    -- Extension which correctly fails for incorrect strings 
+    -- Extension which correctly fails for incorrect strings
      <|> False <$ (peekSatisfy (`elem` (delete c "KQkq")) -- important to delete the character being checked for in the `True` case, otherwise both `True` (+ `c` consumed) or `False` (+ `c` not consumed) could be picked when a flag is present
                    <|> eof
                    <|> (() <$ char ' '))
@@ -356,7 +356,7 @@ parseBoard str = toBoard <$> parseMaybe piecePlacementP str
 
 instance Pretty FEN where
   pretty (MkFEN piecePlacement sideToMove castlingAbility enPassantTarget halfMoveClock  fullMoveCounter)
-    = concat 
+    = concat
         [ pretty piecePlacement
         , " "
         , pretty sideToMove

@@ -65,7 +65,6 @@ library
                       Chess.Notation.FEN,
                       Chess.Notation.LAN,
                       Chess.Engine.Stockfish,
-                      
                       Text.Yoda
 
     -- Modules included in this library but not exported.

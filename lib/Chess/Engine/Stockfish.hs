@@ -36,7 +36,7 @@ egStockfish
         runCmd' "position startpos" >>= putLines
         runCmd' "d" >>= putLines
 
- 
+
 
 data Config = MkConfig
   { stopCondition :: StopCondition
@@ -66,7 +66,7 @@ calculateBestMove config fen = withStockfish $ \runCmd' calcMove' -> do
 
   -- set board state:
   _ <- runCmd' $ "position fen " ++ pretty fen
-  
+
   -- find best move with stopping condition for search
   calcMove' (stopCondition config)
 
@@ -151,7 +151,7 @@ calcMove stdin stdout stopCond = do
   out <- getLinesUntil stdout (\str -> take 8 str == "bestmove")
 
   let bestMoveStr = drop 9 (last out)
-  
+
   case parseMaybe lanP bestMoveStr of
     Nothing   -> ioError (userError $ "Failed to parse best move from stockfish: " ++ bestMoveStr)
     Just move -> pure move

@@ -29,8 +29,9 @@ main = do
               "humanvsstockfish"          -> Right (humanVsStockfishFromFEN theme fen)
               "stockfishvsstockfish"      -> Right (stockfishVsStockfishFromFEN theme fen)
               "stockfishvsstockfishquick" -> Right (stockfishVsStockfishQuickFromFEN theme fen)
+              "stockfishopeningsdemo"     -> Right (stockfishOpeningsDemo theme)
               _ -> Left (unlines [ "Invalid mode: " ++ modeStr
-                                 , "Mode must be 'humanvshuman', 'humanvsstockfish', 'stockfishvsstockfish', or 'stockfishvsstockfishquick'"
+                                 , "Mode must be 'humanvshuman', 'humanvsstockfish', 'stockfishvsstockfish', 'stockfishvsstockfishquick', or 'stockfishopeningsdemo'"
                                  ])
       case tryCmd of
         Right cmd -> cmd

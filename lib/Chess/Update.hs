@@ -14,24 +14,25 @@ import Chess.View
 
 import Chess.Notation.Prelude
 import qualified Chess.Notation.FEN as FEN
-import Chess.Notation.LAN
+import Chess.Notation.LAN as LAN
 import Text.Yoda
 
 import qualified Chess.Engine.Stockfish as Stockfish
 
-import Data.Maybe ( catMaybes, fromJust, mapMaybe, isJust, fromMaybe )
+import Data.Maybe ( catMaybes, fromJust, mapMaybe, isJust, fromMaybe, maybeToList )
 import qualified Data.Map.Strict as Map
 import Control.Monad (guard)
 import Control.Concurrent (threadDelay)
 import Data.List (find)
 import Data.Either ( isRight )
+import Control.Applicative (Alternative)
 
 -- Piece moves --
 -----------------
 
 -- https://en.wikipedia.org/wiki/Algebraic_notation_(chess)#Disambiguating_moves
 data Move = MkMove Piece Pos CaptureIndicator Pos
-          | PawnPromotion File PromotionRank PromotionType
+          | PawnPromotion File CaptureIndicator File PromotionRank PromotionType
           | Castle CastlingSide
   deriving (Show, Eq)
 
@@ -46,6 +47,7 @@ captureMove piece pos pos' = MkMove piece pos Capture pos'
 
 isCapture :: Move -> Bool
 isCapture (MkMove _ _ Capture _) = True
+isCapture (PawnPromotion _ Capture _ _ _) = True
 isCapture _ = False
 
 data CastlingSide = Kingside | Queenside
@@ -83,7 +85,7 @@ toPromotionType = \case
   Bishop -> Just PromBishop
   Rook   -> Just PromRook
   Queen  -> Just PromQueen
-  _      -> Nothing 
+  _      -> Nothing
 
 -- isasdCapture :: CaptureIndicator -> Bool
 -- isasdCapture Capture   = True
@@ -102,16 +104,16 @@ makeMove move state = do
                                 ++ show player ++ "'s piece")
 
       pure (piece, pos, captureIndicator)
-    PawnPromotion file pRank _ -> do
+    PawnPromotion file captureIndicator file' pRank _ -> do
       case state.sideToMove of
         White -> do
           guardWithError (pRank == PR8)
                          ("Error: Can't promote pawn unless it reaches the opposite rank")
-          pure (MkPiece White Pawn, MkPos file R7, NoCapture)
+          pure (MkPiece White Pawn, MkPos file R7, captureIndicator)
         Black -> do
           guardWithError (pRank == PR1)
                          ("Error: Can't promote pawn unless it reaches the opposite rank")
-          pure (MkPiece Black Pawn, MkPos file R2, NoCapture)
+          pure (MkPiece Black Pawn, MkPos file R2, captureIndicator)
 
     Castle _ -> case state.sideToMove of
         White -> pure (MkPiece White King, MkPos E R1, NoCapture)
@@ -125,7 +127,7 @@ makeMove move state = do
   (_, stateUpdate) <- maybeToEither
                         (find (\(move',_) -> move' == move)
                               (psuedoLegalMovesAtPos state pos))
-                        ("Error: " ++ pretty move ++ " is not a valid move") 
+                        ("Error: " ++ pretty move ++ " is not a valid move")
 
   -- let board' = board state
   --              |> Map.delete pos
@@ -158,14 +160,15 @@ makeMoveLAN lan state = do
   makeMove move state
 
 fromLAN :: State -> LAN -> Either String Move
-fromLAN _ (MkLAN _ (MkPos file rank) (Just (MkPiece _ pieceType))) = do
+fromLAN _ (MkLAN (MkPos file _) (MkPos file' rank') (Just (MkPiece _ pieceType))) = do
   promType <- maybeToEither
                 (toPromotionType pieceType)
                 ("Error: Can't promote to " ++ show pieceType)
   promRank <- maybeToEither
-                (toPromRank rank)
-                ("Error: Can't promote on rank " ++ show rank)
-  Right (PawnPromotion file promRank promType)
+                (toPromRank rank')
+                ("Error: Can't promote on rank " ++ show rank')
+  let captureIndicator = if file == file' then NoCapture else Capture
+  Right (PawnPromotion file captureIndicator file' promRank promType)
 fromLAN state (MkLAN pos pos' _) = do
   piece@(MkPiece player pieceType) <- getPieceAtPos pos state.board
 
@@ -185,7 +188,7 @@ fromLAN state (MkLAN pos pos' _) = do
             then Just (MkMove piece pos Capture pos')
             else Nothing
         _    -> Nothing
-  
+
   case maybeSpecialMove of
     Just specialMove -> Right specialMove
     _ -> do
@@ -288,16 +291,16 @@ getCaptureIndicator player pos b
 posToCoord :: Pos -> (Int, Int)
 posToCoord (MkPos file rank) = (fromEnum file, fromEnum rank)
 
-coordToPos :: (Int, Int) -> Maybe Pos
+coordToPos :: Alternative f => (Int, Int) -> f Pos
 coordToPos (x,y)
   | 0 <= x && x < 8 &&
-    0 <= y && y < 8    = Just (MkPos (toEnum x) (toEnum y))
-  | otherwise          = Nothing
+    0 <= y && y < 8    = pure (MkPos (toEnum x) (toEnum y))
+  | otherwise          = empty
 
 addTuples :: (Int, Int) -> (Int, Int) -> (Int, Int)
 addTuples (x,y) (x',y') = (x + x', y + y')
 
-offsetPos :: Pos -> (Int, Int) -> Maybe Pos
+offsetPos :: Alternative f => Pos -> (Int, Int) -> f Pos
 offsetPos pos dxdy
   = posToCoord pos
     |> addTuples dxdy
@@ -563,109 +566,113 @@ pawnMoves' state player pos@(MkPos file rank)
         direction = case player of
                       White ->  1
                       Black -> -1
-    in catMaybes $ concat
+
+        onStartingRank White R2 = True
+        onStartingRank Black R7 = True
+        onStartingRank _     _  = False
+
+        promotionRank
+          | player == White = R8
+          | otherwise       = R1
+    -- in catMaybes $ concat
+    in concat
 
     -- Single space forward
-  [ [do pos' <- offsetPos pos (0, direction)
-        guard (pos' `Map.notMember` b)
-        Just ( onlyMove piece pos pos'
-             , movePieceOnBoard piece pos pos'
-             )
-    ]
+  [ do pos'@(MkPos _ rank') <- offsetPos pos (0, direction)
+       guard (pos' `Map.notMember` b)
+
+       if rank' /= promotionRank then do
+         pure ( onlyMove piece pos pos'
+              , movePieceOnBoard piece pos pos'
+              )
+       else do -- If moving to promotion rank, should be promotion move, not normal move
+         let promRankParsed = if promotionRank == R1 then PR1 else PR8
+
+         promType <- [PromKnight, PromBishop, PromRook, PromQueen]
+
+         pure ( PawnPromotion file NoCapture file promRankParsed promType
+               , modifyBoard (  Map.delete pos
+                             .> Map.insert (MkPos file promotionRank)
+                                           (MkPiece player
+                                                    (fromPromotionType promType))
+                             )
+               )
+
 
     -- Double move, only if the pawn is on the starting rank
-  , [do guard (onStartingRank player rank)
+  , do guard (onStartingRank player rank)
 
-        pos' <- offsetPos pos (0, direction)
-        guard (pos' `Map.notMember` b)
-        pos'' <- offsetPos pos' (0, direction)
-        guard (pos'' `Map.notMember` b)
+       pos' <- offsetPos pos (0, direction)
+       guard (pos' `Map.notMember` b)
+       pos'' <- offsetPos pos' (0, direction)
+       guard (pos'' `Map.notMember` b)
 
-        -- We could use `toEnPassantTarget` directly in the lambda for `modifyEnPassantTarget`,
-        -- but that's semantically different. It should never fail, but if it does,
-        -- doing it here will exclude the move, rather than include the move without
-        -- an en passant target
-        epTarget <- toEnPassantTarget pos'
+       -- We could use `toEnPassantTarget` directly in the lambda for `modifyEnPassantTarget`,
+       -- but that's semantically different. It should never fail, but if it does,
+       -- doing it here will exclude the move, rather than include the move without
+       -- an en passant target
+       epTarget <- maybeToList (toEnPassantTarget pos')
 
-        Just ( onlyMove piece pos pos''
-             , movePieceOnBoard piece pos pos''
-               .> modifyEnPassantTarget (\_ -> Just epTarget) -- TODO when to reset enpassant for every other move?
-             )
-    ]
+       pure ( onlyMove piece pos pos''
+            , movePieceOnBoard piece pos pos''
+              .> modifyEnPassantTarget (\_ -> Just epTarget) -- TODO when to reset enpassant for every other move?
+            )
+
 
     -- Diagonal captures
-  , [do posDiag <- offsetPos pos (dx, direction)
+  , do dx <- [1, -1] -- +1 is for one of the adjacent files, -1 is for the other
+       posDiag@(MkPos file' rank') <- offsetPos pos (dx, direction)
 
-        case b Map.!? posDiag of
-          -- Normal capture
-          Just (MkPiece player' _) -> do
-            guard (player /= player') -- Can't capture your own piece
+       case b Map.!? posDiag of
+         -- Normal capture
+         Just (MkPiece player' _) -> do
+           guard (player /= player') -- Can't capture your own piece
 
-            Just ( captureMove piece pos posDiag
-                 , movePieceOnBoard piece pos posDiag
-                 )
-          Nothing -> do
-            -- En passant capture
-            posDiagEPTarget <- toEnPassantTarget posDiag
-            epTarget <- enPassantTarget state
-            guard (posDiagEPTarget == epTarget)
+           if rank' /= promotionRank then do
+             pure ( captureMove piece pos posDiag
+                  , movePieceOnBoard piece pos posDiag
+                  )
+           else do -- If capturing on promotion rank, should be promotion move, not normal move
+             let promRankParsed = if promotionRank == R1 then PR1 else PR8
 
-            -- This was what the code was initially, but this does something very different:
-            -- guard (toEnPassantTarget posDiag == enPassantTarget state)
+             promType <- [PromKnight, PromBishop, PromRook, PromQueen]
 
-            -- It never checks if there's a valid en passant target
-            -- or whether posDiag is in the correct rank for en passant.
-            -- The bug is most apparent when BOTH conditions fail,
-            -- i.e. `toEnPassantTarget posDiag` and `enPassantTarget state` both return `Nothing`
-            -- and therefore `toEnPassantTarget posDiag == enPassantTarget state` returns `True`
+             pure ( PawnPromotion file Capture file' promRankParsed promType
+                  , modifyBoard (  Map.delete pos
+                                .> Map.insert (MkPos file' promotionRank)
+                                              (MkPiece player
+                                                       (fromPromotionType promType))
+                                )
+                  )
+         Nothing -> do
+           -- En passant capture
+           posDiagEPTarget <- maybeToList (toEnPassantTarget posDiag)
+           epTarget <- maybeToList (enPassantTarget state)
+           guard (posDiagEPTarget == epTarget)
+
+           -- This was what the code was initially, but this does something very different:
+           -- guard (toEnPassantTarget posDiag == enPassantTarget state)
+
+           -- It never checks if there's a valid en passant target
+           -- or whether posDiag is in the correct rank for en passant.
+           -- The bug is most apparent when BOTH conditions fail,
+           -- i.e. `toEnPassantTarget posDiag` and `enPassantTarget state` both return `Nothing`
+           -- and therefore `toEnPassantTarget posDiag == enPassantTarget state` returns `True`
 
 
-            -- The pawn being en-passant-ed will always be one square advanced from
-            -- where the capturing pawn is moving to
-            capturedPawnPos <- offsetPos posDiag (0, negate direction)
+           -- The pawn being en-passant-ed will always be one square advanced from
+           -- where the capturing pawn is moving to
+           capturedPawnPos <- offsetPos posDiag (0, negate direction)
 
-            MkPiece player' Pawn <- b Map.!? capturedPawnPos
+           MkPiece player' Pawn <- maybeToList (b Map.!? capturedPawnPos)
 
-            guard (player /= player')
-            
+           guard (player /= player')
 
-            Just ( captureMove piece pos posDiag
+           pure ( captureMove piece pos posDiag
                  , movePieceOnBoard piece pos posDiag
                    .> modifyBoard (Map.delete capturedPawnPos)
                  )
-    | dx <- [1, -1] -- +1 is for one of the adjacent files, -1 is for the other
-    ]
-
-    -- Promotion
-    -- Using 'MultiWayIf' extension we can use guard syntax for 'if' expressions
-    -- though it is slightly modified to use '->' instead of '='
-  , [if | rank == R7 -> do guard (player == White)
-                           Just ( PawnPromotion file PR8 promType
-                                , modifyBoard (  Map.delete pos
-                                              .> Map.insert (MkPos file R8)
-                                                            (MkPiece White
-                                                                    (fromPromotionType promType))
-                                              )
-                                )
-        | rank == R2 -> do guard (player == Black)
-                           Just ( PawnPromotion file PR1 promType
-                                , modifyBoard (  Map.delete pos
-                                              .> Map.insert (MkPos file R1)
-                                                            (MkPiece Black
-                                                                    (fromPromotionType promType))
-                                              )
-                                )
-        | otherwise -> Nothing
-
-    | promType <- [PromKnight, PromBishop, PromRook, PromQueen]
-    ]
-    -- TODO: En passant
-    -- TODO: Pawn promotion
   ]
-  where
-    onStartingRank White R2 = True
-    onStartingRank Black R7 = True
-    onStartingRank _     _  = False
 
 movePieceOnBoard :: Piece -> Pos -> Pos -> State -> State
 movePieceOnBoard piece pos pos' = modifyBoard (Map.delete pos .> Map.insert pos' piece)
@@ -879,22 +886,6 @@ playFromFEN theme player1 player2 str = do
     Nothing -> putStrLn "Invalid FEN"
     Just state -> gameLoop theme player1 player2 state
 
--- gameLoop :: Theme -> State -> IO ()
--- gameLoop theme state = do
---   printState theme state
---   state' <- playMove state
---   printState theme state'
-
---   case checkGameOver state' of
---     Just Checkmate -> putStrLn "Checkmate. White wins!"
---     Just Stalemate -> putStrLn "Stalemate. It's a draw."
---     Nothing -> do
---       state'' <- stockfishMakeUnderpoweredMove state'
---       case checkGameOver state'' of
---         Just Checkmate -> putStrLn "Checkmate. Black wins!"
---         Just Stalemate -> putStrLn "Stalemate. It's a draw."
---         Nothing -> gameLoop theme state''
-
 gameLoop :: Theme -> (State -> IO State) -> (State -> IO State) -> State -> IO ()
 gameLoop theme player1 player2 state = do
   printState theme state
@@ -970,7 +961,57 @@ stockfishQuick state = do
       , Stockfish.cpuThreads = 1
       }
 
--- TODO: Check for checks and checkmates
+-- Openings --
+--------------
+
+stockfishOpeningsDemo :: Theme -> IO ()
+stockfishOpeningsDemo theme = do
+  putStrLn "DEMO: Stockfish vs Stockfish\n"
+  threadDelay 2000000
+  go openings
+  where
+    go [] = putStrLn "Demo complete!"
+    go ((openingName, openingFEN) : openings') = do
+      putStrLn openingName
+      putStrLn ""
+      threadDelay 2000000
+      case FEN.stateFromFEN openingFEN of
+        Nothing    -> putStrLn ("Invalid FEN: " ++ openingFEN)
+        Just state -> do
+          printState theme state
+          threadDelay 5000000
+          gameLoop theme stockfishQuick stockfishQuick state
+          threadDelay 3000000
+          putStrLn ""
+          go openings'
+
+openings :: [(String, String)]
+openings =
+  [ ( "The Queen's Gambit"
+    , "rnbqkbnr/ppp1pppp/8/3p4/2PP4/8/PP2PPPP/RNBQKBNR b KQkq - 0 2"
+    )
+  , ( "The London"
+    , "rnbqkb1r/ppp1pppp/5n2/3p4/3P1B2/5N2/PPP1PPPP/RN1QKB1R b KQkq - 3 3"
+    )
+  , ( "The Caro-Kann Defense"
+    , "rnbqkbnr/pp1ppppp/2p5/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+    )
+  , ( "The Italian Game"
+    , "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3"
+    )
+  , ( "The Sicilian Defense"
+    , "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2"
+    )
+  , ( "The Catalan"
+    , "rnbqkb1r/pppp1ppp/4pn2/8/2PP4/6P1/PP2PP1P/RNBQKBNR b KQkq - 0 3"
+    )
+  , ( "The Cow"
+    , "r1bqkb1r/ppp2ppp/1n1pp1n1/8/8/1N1PP1N1/PPP2PPP/R1BQKB1R w KQkq - 8 7"
+    )
+  , ( "The W"
+    , "r2qkbnr/ppp2ppp/2n5/3ppb2/1P5P/2P1P1P1/P2P1P2/RNBQKBNR w KQkq - 0 1"
+    )
+  ]
 
 -- Extra parsing  --
 --------------------
@@ -999,11 +1040,23 @@ mkMoveP = MkMove <$> pieceP
                  <*> captureIndicatorP
                  <*> posP
 
+-- >>> parseMaybe pawnPromotionP "g8r"
+-- Just (PawnPromotion G NoCapture G PR8 PromRook)
+-- >>> parseMaybe pawnPromotionP "fxg8q"
+-- Just (PawnPromotion F Capture G PR8 PromQueen)
+-- >>> parseMaybe pawnPromotionP "fg8q"
+-- Nothing
+
 pawnPromotionP :: Parser Move
-pawnPromotionP
-  = PawnPromotion <$> fileP
-                  <*> promotionRankP
-                  <*> promTypeP
+pawnPromotionP = do
+  file <- fileP
+  captureIndicator <- captureIndicatorP
+  file' <- if captureIndicator == Capture
+             then fileP
+             else pure file
+  promRank <- promotionRankP
+  promType <- promTypeP
+  pure (PawnPromotion file captureIndicator file' promRank promType)
 
 castleP :: Parser Move
 castleP = Castle <$> castlingSideP
@@ -1035,8 +1088,10 @@ instance Pretty Move where
     , pretty captureIndicator
     , pretty pos'
     ]
-  pretty (PawnPromotion file pRank promType) = concat
+  pretty (PawnPromotion file captureIndicator file' pRank promType) = concat
     [ pretty file
+    , pretty captureIndicator
+    , pretty file'
     , pretty pRank
     , pretty promType
     ]
